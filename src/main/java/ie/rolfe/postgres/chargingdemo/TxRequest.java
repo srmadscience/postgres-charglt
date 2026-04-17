@@ -1,4 +1,4 @@
-package ie.rolfe.s2.chargingdemo;
+package ie.rolfe.postgres.chargingdemo;
 
 class TxRequest {
     public int randomuser;

@@ -13,7 +13,7 @@
  * https://opensource.org/licenses/MIT.
  */
 
-package ie.rolfe.s2.chargingdemo;
+package ie.rolfe.postgres.chargingdemo;
 
 
 /**

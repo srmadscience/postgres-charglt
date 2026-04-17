@@ -1,4 +1,4 @@
-package ie.rolfe.s2.chargingdemo;
+package ie.rolfe.postgres.chargingdemo;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -6,28 +6,28 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Random;
 
-public class ChargingDemoTransactionWorker extends BaseChargingDemo implements Runnable, AutoCloseable {
+public class ChargingDemoKVWorker extends BaseChargingDemo implements Runnable, AutoCloseable {
 
     public static final int MAX_QUEUE_SIZE = 10;
     private static final int SLEEP_NANOS = 5000;
-    final ArrayList<TxRequest> requestQueue = new ArrayList<TxRequest>();
+    final ArrayList<KVRequest> requestQueue = new ArrayList<KVRequest>();
     int workerId;
     Connection mainConnection;
     Random r;
-    PreparedStatement addCredit;
-    PreparedStatement reportUsage;
-    UserTransactionState[] users;
+    PreparedStatement getAndLock;
+    PreparedStatement updateLockedUser;
+    UserKVState[] users;
     boolean keepGoing = true;
 
 
-    public ChargingDemoTransactionWorker(int workerId, String hostlist, String username, String password, Random r, UserTransactionState[] users) {
+    public ChargingDemoKVWorker(int workerId, String hostlist, String username, String password, Random r, UserKVState[] users) {
         this.workerId = workerId;
         this.r = r;
         this.users = users;
         try {
             mainConnection = connectPG(hostlist, username, password);
-            addCredit = mainConnection.prepareStatement(CALL_ADD_CREDIT);
-            reportUsage = mainConnection.prepareStatement(CALL_REPORT_QUOTA_USAGE);
+            getAndLock = mainConnection.prepareStatement("SELECT * FROM GetAndLockUser(?,?)");
+            updateLockedUser = mainConnection.prepareStatement("SELECT * FROM UpdateLockedUser(?,?,?,?)");
         } catch (Exception e) {
             throw new RuntimeException(e);
 
@@ -39,11 +39,10 @@ public class ChargingDemoTransactionWorker extends BaseChargingDemo implements R
         workerMsg("KeepGoing set to " + keepGoing + ". Queue size: " + requestQueue.size());
     }
 
-    public boolean addRequest(TxRequest request) {
+    public boolean addRequest(KVRequest request) {
 
         boolean nowait = true;
-        int qSize
-                = Integer.MAX_VALUE;
+        int qSize = Integer.MAX_VALUE;
 
         int attempts = 1;
 
@@ -87,17 +86,16 @@ public class ChargingDemoTransactionWorker extends BaseChargingDemo implements R
 
             while (!requestQueue.isEmpty()) {
                 try {
-                    TxRequest request = null;
+                    KVRequest request = null;
                     synchronized (requestQueue) {
                         request = requestQueue.removeFirst();
                     }
 
                     shc.reportLatency(BaseChargingDemo.QUEUE_LAG, request.createMS, "Time spent in request queue", 10000);
-                    doTransaction(users, request.randomuser, r, addCredit
-                            , request.pid, request.createMS, reportUsage, request.txId);
-                    users[request.randomuser].endTran();
+                    doKVtransaction(request.userCount, request.jsonsize, request.deltaProportion, request.userState, request.oursession, getAndLock
+                            , request.startMs, r, updateLockedUser, request.gson);
 
-                } catch (SQLException e) {
+                } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             }

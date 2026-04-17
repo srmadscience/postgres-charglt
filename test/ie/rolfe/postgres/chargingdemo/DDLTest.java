@@ -6,7 +6,7 @@
  * https://opensource.org/licenses/MIT.
  */
 
-package ie.rolfe.s2.chargingdemo;
+package ie.rolfe.postgres.chargingdemo;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.*;
 
-import static ie.rolfe.s2.chargingdemo.ReferenceData.*;
+import static ie.rolfe.postgres.chargingdemo.ReferenceData.*;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class DDLTest {
