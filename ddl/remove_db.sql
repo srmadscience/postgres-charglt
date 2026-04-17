@@ -1,0 +1,27 @@
+
+-- Run this script connected to the 'charglt' database.
+
+DROP FUNCTION IF EXISTS GetUsersWithMultipleSessions();
+DROP FUNCTION IF EXISTS showTransactions(BIGINT);
+DROP FUNCTION IF EXISTS GetUser(BIGINT);
+DROP FUNCTION IF EXISTS GetAndLockUser(BIGINT, BIGINT);
+DROP FUNCTION IF EXISTS UpdateLockedUser(BIGINT, BIGINT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS UpsertUser(BIGINT, BIGINT, TEXT, TEXT, TIMESTAMP, TEXT);
+DROP FUNCTION IF EXISTS DelUser(BIGINT);
+DROP FUNCTION IF EXISTS ReportQuotaUsage(BIGINT, BIGINT, BIGINT, BIGINT, TEXT);
+DROP FUNCTION IF EXISTS AddCredit(BIGINT, BIGINT, TEXT);
+DROP FUNCTION IF EXISTS SendToKafka(BIGINT, TEXT);
+
+DROP VIEW IF EXISTS current_locks;
+DROP VIEW IF EXISTS allocated_credit;
+DROP VIEW IF EXISTS users_sessions;
+DROP VIEW IF EXISTS recent_activity_out;
+DROP VIEW IF EXISTS recent_activity_in;
+DROP VIEW IF EXISTS cluster_activity_by_users;
+DROP VIEW IF EXISTS cluster_activity;
+DROP VIEW IF EXISTS last_cluster_activity;
+DROP VIEW IF EXISTS cluster_users;
+
+DROP TABLE IF EXISTS user_recent_transactions;
+DROP TABLE IF EXISTS user_usage_table;
+DROP TABLE IF EXISTS user_table;
