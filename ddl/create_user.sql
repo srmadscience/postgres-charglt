@@ -1,0 +1,17 @@
+
+CREATE ROLE charglt LOGIN  CREATEDB;
+ALTER USER charglt WITH PASSWORD 'charglt';
+create database charglt OWNER charglt;
+
+CREATE SCHEMA IF NOT EXISTS charglt;
+
+GRANT USAGE ON SCHEMA charglt TO charglt;
+GRANT ALL ON SCHEMA charglt TO charglt;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA charglt
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO charglt;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA charglt
+  GRANT USAGE, SELECT ON SEQUENCES TO charglt;
+
+ALTER ROLE charglt SET search_path TO charglt, public;

@@ -1,7 +1,6 @@
 
 -- Run this script connected to the 'charglt' database.
 -- Create the database first with: CREATE DATABASE charglt;
-
 CREATE TABLE user_table
 (userid bigint not null primary key
 ,user_last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP

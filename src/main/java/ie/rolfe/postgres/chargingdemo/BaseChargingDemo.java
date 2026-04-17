@@ -213,7 +213,7 @@ public abstract class BaseChargingDemo {
                 cs.execute();
 
 
-                if (i % 100000 == 1) {
+                if (i % 100 == 1) {
                     msg("Upserted " + i + " users...");
                     mainConnection.commit();
                 }
