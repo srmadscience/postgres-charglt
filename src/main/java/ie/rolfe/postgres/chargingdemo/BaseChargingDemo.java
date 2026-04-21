@@ -481,6 +481,7 @@ public abstract class BaseChargingDemo {
                 getAndLock.setLong(1, oursession);
                 getAndLock.setLong(2, oursession);
                 getAndLock.execute();
+                getAndLock.getConnection().commit();
                 shc.reportLatency(BaseChargingDemo.KV_GET, startMs, "KV Get time", 2000);
 
                 shc.incCounter("LOCK_COUNT");
@@ -496,6 +497,7 @@ public abstract class BaseChargingDemo {
             getAndLock.setLong(1, oursession);
             getAndLock.setLong(2, oursession);
             getAndLock.execute();
+            getAndLock.getConnection().commit();
             userState[oursession].setStatus(UserKVState.STATUS_LOCKED);
             shc.reportLatency(BaseChargingDemo.KV_GET, startMs, "KV Get time", 2000);
             shc.incCounter("LOCK_COUNT");
@@ -516,6 +518,7 @@ public abstract class BaseChargingDemo {
                 updateLockedUser.setString(3, "" + getNewLoyaltyCardNumber(r, userCount / 10));
                 updateLockedUser.setString(4, "NEW_LOYALTY_NUMBER");
                 updateLockedUser.execute();
+                updateLockedUser.getConnection().commit();
                 shc.reportLatency(BaseChargingDemo.KV_PUT, startMs, "KV Put Time", 2000);
                 shc.incCounter("DELTA_UPDATE");
             } else {
@@ -529,6 +532,7 @@ public abstract class BaseChargingDemo {
                 updateLockedUser.setString(3, getExtraUserDataAsJsonString(jsonsize, gson, r, userCount));
                 updateLockedUser.setString(4, "FULL_UPDATE");
                 updateLockedUser.execute();
+                updateLockedUser.getConnection().commit();
                 shc.reportLatency(BaseChargingDemo.KV_PUT, startMs, "KV Put Time", 2000);
                 shc.incCounter("FULL_UPDATE");
             }
@@ -758,6 +762,7 @@ public abstract class BaseChargingDemo {
             addCredit.setLong(2, extraCredit);
             addCredit.setString(3, "AddCreditOnShortage_" + pid + "_" + txId + "_" + System.currentTimeMillis());
             addCredit.execute();
+            addCredit.getConnection().commit();
             shc.reportLatency(BaseChargingDemo.ADD_CREDIT, startMs, "ADD_CREDIT", 2000);
 
         } else {
@@ -773,6 +778,7 @@ public abstract class BaseChargingDemo {
             reportUsage.setLong(4, randomuser);
             reportUsage.setString(5, "ReportQuotaUsage_" + pid + "_" + txId + "_" + System.currentTimeMillis());
             reportUsage.execute();
+            reportUsage.getConnection().commit();
             shc.reportLatency(BaseChargingDemo.REPORT_QUOTA_USAGE, startMs, "REPORT_QUOTA_USAGE", 2000);
         }
 
