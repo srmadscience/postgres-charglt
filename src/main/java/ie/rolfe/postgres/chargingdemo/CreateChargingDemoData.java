@@ -56,7 +56,8 @@ public class CreateChargingDemoData extends BaseChargingDemo {
         String username = args[4];
         String password = args[5];
         try {
-            Connection mainClient = connectPG(hostlist, username, password);
+            // Batch many upserts per transaction, so this loader manages its own commits.
+            Connection mainClient = connectPG(hostlist, username, password, false);
 
             upsertAllUsers(userCount, tpMs, loblength, gson, initialCredit, mainClient);
 
