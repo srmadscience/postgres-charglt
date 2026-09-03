@@ -48,7 +48,8 @@ public class DeleteChargingDemoData extends BaseChargingDemo {
         String username = args[3];
         String password = args[4];
         try {
-            Connection mainClient = connectPG(hostlist, username, password);
+            // Batch many deletes per transaction, so this loader manages its own commits.
+            Connection mainClient = connectPG(hostlist, username, password, false);
             deleteAllUsers(0, userCount, tpMs, mainClient);
 
             msg("Closing connection...");

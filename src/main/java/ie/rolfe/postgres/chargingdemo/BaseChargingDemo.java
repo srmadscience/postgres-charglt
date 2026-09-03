@@ -64,12 +64,32 @@ public abstract class BaseChargingDemo {
 
     /**
      * Connect to PostgreSQL using a hostname (or comma-delimited list for failover).
+     * <p>
+     * The connection is returned in autocommit mode. Every benchmark call site runs exactly
+     * one statement per logical transaction, so letting the server commit it implicitly saves
+     * a network round trip per transaction compared to an explicit commit() from the client.
+     * Bulk loaders that want to batch many rows into one transaction should use
+     * {@link #connectPG(String, String, String, boolean)} with autoCommit set to false.
      *
      * @param hostnames
      * @return
      * @throws Exception
      */
     protected static Connection connectPG(String hostnames, String appUser, String appPassword) throws Exception {
+        return connectPG(hostnames, appUser, appPassword, true);
+    }
+
+    /**
+     * Connect to PostgreSQL using a hostname (or comma-delimited list for failover).
+     *
+     * @param hostnames
+     * @param autoCommit false if the caller wants to batch multiple statements per transaction
+     *                   and commit them itself.
+     * @return
+     * @throws Exception
+     */
+    protected static Connection connectPG(String hostnames, String appUser, String appPassword,
+                                          boolean autoCommit) throws Exception {
         String password = System.getenv("PG_PASSWORD");
         if (password == null) {
             password = appPassword;
@@ -89,13 +109,27 @@ public abstract class BaseChargingDemo {
             msg("Logging into PostgreSQL");
 
             Connection connection = DriverManager.getConnection(connectString);
-            connection.setAutoCommit(false);
+            connection.setAutoCommit(autoCommit);
             return connection;
 
         } catch (Exception e) {
             e.printStackTrace();
             throw new Exception("DB connection failed.." + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Commit, unless the connection is in autocommit mode and the server has already done it
+     * for us. Lets the batching loaders share code with the autocommit benchmark paths.
+     *
+     * @param connection
+     */
+    protected static void commitIfNeeded(Connection connection) throws SQLException {
+
+        if (!connection.getAutoCommit()) {
+            connection.commit();
+        }
+
     }
 
     /**
@@ -153,13 +187,13 @@ public abstract class BaseChargingDemo {
 
                 if (i % 100000 == 1) {
                     msg("Deleted " + i + " users...");
-                    mainConnection.commit();
+                    commitIfNeeded(mainConnection);
                 }
 
             }
 
             msg("All " + minUserId + " -> " + maxUserId + " entries in queue, waiting for it to drain...");
-            mainConnection.commit();
+            commitIfNeeded(mainConnection);
 
             long entriesPerMS = (maxUserId - minUserId) / (System.currentTimeMillis() - startMsUpsert);
             msg("Deleted " + entriesPerMS + " users per ms...");
@@ -215,13 +249,13 @@ public abstract class BaseChargingDemo {
 
                 if (i % 100 == 1) {
                     msg("Upserted " + i + " users...");
-                    mainConnection.commit();
+                    commitIfNeeded(mainConnection);
                 }
 
             }
 
             msg("All " + userCount + " entries in queue, waiting for it to drain...");
-            mainConnection.commit();
+            commitIfNeeded(mainConnection);
 
             long entriesPerMS = userCount / (System.currentTimeMillis() - startMsUpsert);
             msg("Upserted " + entriesPerMS + " users per ms...");
@@ -481,7 +515,6 @@ public abstract class BaseChargingDemo {
                 getAndLock.setLong(1, oursession);
                 getAndLock.setLong(2, oursession);
                 getAndLock.execute();
-                getAndLock.getConnection().commit();
                 shc.reportLatency(BaseChargingDemo.KV_GET, startMs, "KV Get time", 2000);
 
                 shc.incCounter("LOCK_COUNT");
@@ -497,7 +530,6 @@ public abstract class BaseChargingDemo {
             getAndLock.setLong(1, oursession);
             getAndLock.setLong(2, oursession);
             getAndLock.execute();
-            getAndLock.getConnection().commit();
             userState[oursession].setStatus(UserKVState.STATUS_LOCKED);
             shc.reportLatency(BaseChargingDemo.KV_GET, startMs, "KV Get time", 2000);
             shc.incCounter("LOCK_COUNT");
@@ -518,7 +550,6 @@ public abstract class BaseChargingDemo {
                 updateLockedUser.setString(3, "" + getNewLoyaltyCardNumber(r, userCount / 10));
                 updateLockedUser.setString(4, "NEW_LOYALTY_NUMBER");
                 updateLockedUser.execute();
-                updateLockedUser.getConnection().commit();
                 shc.reportLatency(BaseChargingDemo.KV_PUT, startMs, "KV Put Time", 2000);
                 shc.incCounter("DELTA_UPDATE");
             } else {
@@ -532,7 +563,6 @@ public abstract class BaseChargingDemo {
                 updateLockedUser.setString(3, getExtraUserDataAsJsonString(jsonsize, gson, r, userCount));
                 updateLockedUser.setString(4, "FULL_UPDATE");
                 updateLockedUser.execute();
-                updateLockedUser.getConnection().commit();
                 shc.reportLatency(BaseChargingDemo.KV_PUT, startMs, "KV Put Time", 2000);
                 shc.incCounter("FULL_UPDATE");
             }
@@ -573,7 +603,7 @@ public abstract class BaseChargingDemo {
         java.sql.Statement stmt = mainConnection.createStatement();
 
         stmt.execute("TRUNCATE TABLE user_usage_table");
-        mainConnection.commit();
+        commitIfNeeded(mainConnection);
         stmt.close();
 
         unlockAllRecords(mainConnection);
@@ -597,7 +627,7 @@ public abstract class BaseChargingDemo {
 
         stmt.execute(
                 "UPDATE user_table SET user_softlock_sessionid = null, user_softlock_expiry = null WHERE user_softlock_sessionid IS NOT NULL");
-        mainConnection.commit();
+        commitIfNeeded(mainConnection);
         msg("unlockAllRecords...done");
 
     }
@@ -762,7 +792,6 @@ public abstract class BaseChargingDemo {
             addCredit.setLong(2, extraCredit);
             addCredit.setString(3, "AddCreditOnShortage_" + pid + "_" + txId + "_" + System.currentTimeMillis());
             addCredit.execute();
-            addCredit.getConnection().commit();
             shc.reportLatency(BaseChargingDemo.ADD_CREDIT, startMs, "ADD_CREDIT", 2000);
 
         } else {
@@ -778,7 +807,6 @@ public abstract class BaseChargingDemo {
             reportUsage.setLong(4, randomuser);
             reportUsage.setString(5, "ReportQuotaUsage_" + pid + "_" + txId + "_" + System.currentTimeMillis());
             reportUsage.execute();
-            reportUsage.getConnection().commit();
             shc.reportLatency(BaseChargingDemo.REPORT_QUOTA_USAGE, startMs, "REPORT_QUOTA_USAGE", 2000);
         }
 
