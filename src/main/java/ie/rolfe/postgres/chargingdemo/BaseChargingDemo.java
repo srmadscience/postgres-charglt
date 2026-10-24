@@ -103,7 +103,12 @@ public abstract class BaseChargingDemo {
             user = appUser;
         }
 
-        final String connectString = "jdbc:postgresql://" + host + ":5432/charglt?user=" + user + "&password=" + password;
+        String port = System.getenv("PG_PORT");
+        if (port == null) {
+            port = "5432";
+        }
+
+        final String connectString = "jdbc:postgresql://" + host + ":" + port + "/charglt?user=" + user + "&password=" + password;
 
         try {
             msg("Logging into PostgreSQL");
@@ -442,7 +447,7 @@ public abstract class BaseChargingDemo {
                         doKVtransaction(userCount, jsonsize, deltaProportion, userState, oursession, getAndLock, startMs, r, updateLockedUser, gson);
                     } else {
                         KVRequest request = new KVRequest(userCount, jsonsize, deltaProportion, userState, oursession, startMs, r, gson);
-                        workers[userCount % workercount].addRequest(request);
+                        workers[oursession % workercount].addRequest(request);
                     }
 
 
@@ -725,7 +730,7 @@ public abstract class BaseChargingDemo {
                         doTransaction(users, randomuser, r, addCredit, pid, startMs, reportUsage, tranCount);
                     } else {
                         TxRequest request = new TxRequest(tranCount, pid, randomuser);
-                        workers[userCount % workercount].addRequest(request);
+                        workers[randomuser % workercount].addRequest(request);
                     }
 
                 }
