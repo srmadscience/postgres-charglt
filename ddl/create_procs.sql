@@ -194,12 +194,18 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+-- Return type changed (balance columns added), so CREATE OR REPLACE alone won't do.
+DROP FUNCTION IF EXISTS ReportQuotaUsage(bigint, bigint, bigint, bigint, TEXT);
+
 CREATE OR REPLACE FUNCTION ReportQuotaUsage(p_userid bigint, p_units_used bigint,
                                              p_units_wanted bigint, p_sessionid bigint, p_txnId TEXT)
-RETURNS TABLE(l_status_byte INTEGER, l_status_string TEXT) AS $$
+RETURNS TABLE(l_status_byte INTEGER, l_status_string TEXT,
+              l_spendable_balance BIGINT, l_currently_reserved BIGINT) AS $$
 DECLARE
   l_sb INTEGER := 0;
   l_ss TEXT := '';
+  l_spendable BIGINT := NULL;
+  l_reserved BIGINT := NULL;
   l_found_userid BIGINT := NULL;
   l_found_txn_id TEXT := NULL;
   l_balance BIGINT := 0;
@@ -266,22 +272,33 @@ BEGIN
       DELETE FROM user_recent_transactions
       WHERE userid = p_userid
         AND txn_time < CLOCK_TIMESTAMP() - INTERVAL '1 second';
+
+      -- Tell the client what it can still spend, so it knows when to AddCredit
+      l_spendable := l_available_credit - l_offered_credit;
+      l_reserved := l_offered_credit;
     ELSE
       l_sb := 50;
       l_ss := 'User ' || p_userid || ' does not exist';
     END IF;
   END IF;
 
-  RETURN QUERY SELECT l_sb, l_ss;
+  RETURN QUERY SELECT l_sb, l_ss, l_spendable, l_reserved;
 END;
 $$ LANGUAGE plpgsql;
 
 
+-- Return type changed (balance columns added), so CREATE OR REPLACE alone won't do.
+DROP FUNCTION IF EXISTS AddCredit(bigint, bigint, TEXT);
+
 CREATE OR REPLACE FUNCTION AddCredit(p_userid bigint, p_extra_credit bigint, p_txnId TEXT)
-RETURNS TABLE(l_status_byte INTEGER, l_status_string TEXT) AS $$
+RETURNS TABLE(l_status_byte INTEGER, l_status_string TEXT,
+              l_spendable_balance BIGINT, l_currently_reserved BIGINT) AS $$
 DECLARE
   l_sb INTEGER := 0;
   l_ss TEXT := '';
+  l_balance BIGINT := 0;
+  l_allocated_amount BIGINT := 0;
+  l_spendable BIGINT := NULL;
   l_found_userid BIGINT := NULL;
   l_found_txn_id TEXT := NULL;
 BEGIN
@@ -297,7 +314,14 @@ BEGIN
     IF l_found_userid = p_userid THEN
       UPDATE user_table
       SET user_balance = user_balance + p_extra_credit
-      WHERE userid = p_userid;
+      WHERE userid = p_userid
+      RETURNING user_balance INTO l_balance;
+
+      SELECT COALESCE(SUM(uut.allocated_amount), 0) INTO l_allocated_amount
+      FROM user_usage_table uut
+      WHERE uut.userid = p_userid;
+
+      l_spendable := l_balance - l_allocated_amount;
 
       INSERT INTO user_recent_transactions
         (userid, user_txn_id, txn_time, approved_amount, spent_amount, purpose)
@@ -318,6 +342,7 @@ BEGIN
     END IF;
   END IF;
 
-  RETURN QUERY SELECT l_sb, l_ss;
+  -- AddCredit doesn't touch reservations, so l_currently_reserved is NULL (unchanged)
+  RETURN QUERY SELECT l_sb, l_ss, l_spendable, NULL::BIGINT;
 END;
 $$ LANGUAGE plpgsql;

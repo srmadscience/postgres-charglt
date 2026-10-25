@@ -797,6 +797,7 @@ public abstract class BaseChargingDemo {
             addCredit.setLong(2, extraCredit);
             addCredit.setString(3, "AddCreditOnShortage_" + pid + "_" + txId + "_" + System.currentTimeMillis());
             addCredit.execute();
+            updateUserBalance(users[randomuser], addCredit, users[randomuser].sessionId);
             shc.reportLatency(BaseChargingDemo.ADD_CREDIT, startMs, "ADD_CREDIT", 2000);
 
         } else {
@@ -812,10 +813,39 @@ public abstract class BaseChargingDemo {
             reportUsage.setLong(4, randomuser);
             reportUsage.setString(5, "ReportQuotaUsage_" + pid + "_" + txId + "_" + System.currentTimeMillis());
             reportUsage.execute();
+            updateUserBalance(users[randomuser], reportUsage, randomuser);
             shc.reportLatency(BaseChargingDemo.REPORT_QUOTA_USAGE, startMs, "REPORT_QUOTA_USAGE", 2000);
         }
 
         users[randomuser].endTran();
+    }
+
+    /**
+     * Copy the spendable balance and reservation returned by AddCredit / ReportQuotaUsage
+     * into our client-side view of the user, so the next transaction for them knows
+     * whether to top up or how much to report as used. NULL means 'unchanged'.
+     *
+     * @param user
+     * @param statement a statement that has just been executed
+     * @param sessionId
+     * @throws SQLException
+     */
+    private static void updateUserBalance(UserTransactionState user, PreparedStatement statement, long sessionId) throws SQLException {
+        try (ResultSet rs = statement.getResultSet()) {
+            if (rs != null && rs.next()) {
+                final byte statusByte = rs.getByte("l_status_byte");
+
+                final long spendable = rs.getLong("l_spendable_balance");
+                if (!rs.wasNull()) {
+                    user.reportEndTransaction(sessionId, statusByte, spendable);
+                }
+
+                final long reserved = rs.getLong("l_currently_reserved");
+                if (!rs.wasNull()) {
+                    user.currentlyReserved = reserved;
+                }
+            }
+        }
     }
 
     /**
