@@ -3,21 +3,22 @@ package ie.rolfe.postgres.chargingdemo;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class ChargingDemoKVWorker extends BaseChargingDemo implements Runnable, AutoCloseable {
 
     public static final int MAX_QUEUE_SIZE = 10;
-    private static final int SLEEP_NANOS = 5000;
-    final ArrayList<KVRequest> requestQueue = new ArrayList<KVRequest>();
+    private static final long POLL_MS = 100;
+    final ArrayBlockingQueue<KVRequest> requestQueue = new ArrayBlockingQueue<KVRequest>(MAX_QUEUE_SIZE);
     int workerId;
     Connection mainConnection;
     Random r;
     PreparedStatement getAndLock;
     PreparedStatement updateLockedUser;
     UserKVState[] users;
-    boolean keepGoing = true;
+    volatile boolean keepGoing = true;
 
 
     public ChargingDemoKVWorker(int workerId, String hostlist, String username, String password, Random r, UserKVState[] users) {
@@ -42,35 +43,20 @@ public class ChargingDemoKVWorker extends BaseChargingDemo implements Runnable, 
     public boolean addRequest(KVRequest request) {
 
         boolean nowait = true;
-        int qSize = Integer.MAX_VALUE;
-
         int attempts = 1;
 
         final long startMs = System.currentTimeMillis();
 
-        // Note that we don't need *perfect* synchronization. We just need to stop the queue
-        // growing uncontrollably;
-        synchronized (requestQueue) {
-            qSize = requestQueue.size();
-        }
-
-        while (qSize >= MAX_QUEUE_SIZE) {
+        // Block (rather than spin) until the worker has room for this request
+        if (!requestQueue.offer(request)) {
             shc.incCounter("QUEUE_OVERFLOW");
             attempts++;
             nowait = false;
             try {
-                Thread.sleep(0, SLEEP_NANOS);
+                requestQueue.put(request);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
-
-            synchronized (requestQueue) {
-                qSize = requestQueue.size();
-            }
-
-        }
-        synchronized (requestQueue) {
-            requestQueue.add(request);
         }
 
         shc.reportLatency(BaseChargingDemo.QUEUE_QUEUE, startMs, "Time spent waiting to join request queue", 10000);
@@ -84,25 +70,17 @@ public class ChargingDemoKVWorker extends BaseChargingDemo implements Runnable, 
 
         while (keepGoing) {
 
-            while (!requestQueue.isEmpty()) {
-                try {
-                    KVRequest request = null;
-                    synchronized (requestQueue) {
-                        request = requestQueue.removeFirst();
-                    }
+            try {
+                // Wait for work instead of polling an empty queue; the timeout lets us notice keepGoing
+                KVRequest request = requestQueue.poll(POLL_MS, TimeUnit.MILLISECONDS);
+                if (request != null) {
 
                     shc.reportLatency(BaseChargingDemo.QUEUE_LAG, request.createMS, "Time spent in request queue", 10000);
                     doKVtransaction(request.userCount, request.jsonsize, request.deltaProportion, request.userState, request.oursession, getAndLock
                             , request.startMs, r, updateLockedUser, request.gson);
-
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
                 }
-            }
 
-            try {
-                Thread.sleep(0, SLEEP_NANOS);
-            } catch (InterruptedException e) {
+            } catch (Exception e) {
                 throw new RuntimeException(e);
             }
 
@@ -126,7 +104,7 @@ public class ChargingDemoKVWorker extends BaseChargingDemo implements Runnable, 
         while (!requestQueue.isEmpty()) {
 
             try {
-                Thread.sleep(0, SLEEP_NANOS);
+                Thread.sleep(1);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
