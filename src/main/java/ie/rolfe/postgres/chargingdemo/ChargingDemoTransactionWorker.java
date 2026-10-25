@@ -3,21 +3,22 @@ package ie.rolfe.postgres.chargingdemo;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class ChargingDemoTransactionWorker extends BaseChargingDemo implements Runnable, AutoCloseable {
 
     public static final int MAX_QUEUE_SIZE = 10;
-    private static final int SLEEP_NANOS = 5000;
-    final ArrayList<TxRequest> requestQueue = new ArrayList<TxRequest>();
+    private static final long POLL_MS = 100;
+    final ArrayBlockingQueue<TxRequest> requestQueue = new ArrayBlockingQueue<TxRequest>(MAX_QUEUE_SIZE);
     int workerId;
     Connection mainConnection;
     Random r;
     PreparedStatement addCredit;
     PreparedStatement reportUsage;
     UserTransactionState[] users;
-    boolean keepGoing = true;
+    volatile boolean keepGoing = true;
 
 
     public ChargingDemoTransactionWorker(int workerId, String hostlist, String username, String password, Random r, UserTransactionState[] users) {
@@ -42,36 +43,20 @@ public class ChargingDemoTransactionWorker extends BaseChargingDemo implements R
     public boolean addRequest(TxRequest request) {
 
         boolean nowait = true;
-        int qSize
-                = Integer.MAX_VALUE;
-
         int attempts = 1;
 
         final long startMs = System.currentTimeMillis();
 
-        // Note that we don't need *perfect* synchronization. We just need to stop the queue
-        // growing uncontrollably;
-        synchronized (requestQueue) {
-            qSize = requestQueue.size();
-        }
-
-        while (qSize >= MAX_QUEUE_SIZE) {
+        // Block (rather than spin) until the worker has room for this request
+        if (!requestQueue.offer(request)) {
             shc.incCounter("QUEUE_OVERFLOW");
             attempts++;
             nowait = false;
             try {
-                Thread.sleep(0, SLEEP_NANOS);
+                requestQueue.put(request);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
-
-            synchronized (requestQueue) {
-                qSize = requestQueue.size();
-            }
-
-        }
-        synchronized (requestQueue) {
-            requestQueue.add(request);
         }
 
         shc.reportLatency(BaseChargingDemo.QUEUE_QUEUE, startMs, "Time spent waiting to join request queue", 10000);
@@ -85,26 +70,18 @@ public class ChargingDemoTransactionWorker extends BaseChargingDemo implements R
 
         while (keepGoing) {
 
-            while (!requestQueue.isEmpty()) {
-                try {
-                    TxRequest request = null;
-                    synchronized (requestQueue) {
-                        request = requestQueue.removeFirst();
-                    }
+            try {
+                // Wait for work instead of polling an empty queue; the timeout lets us notice keepGoing
+                TxRequest request = requestQueue.poll(POLL_MS, TimeUnit.MILLISECONDS);
+                if (request != null) {
 
                     shc.reportLatency(BaseChargingDemo.QUEUE_LAG, request.createMS, "Time spent in request queue", 10000);
                     doTransaction(users, request.randomuser, r, addCredit
                             , request.pid, request.createMS, reportUsage, request.txId);
                     users[request.randomuser].endTran();
-
-                } catch (SQLException e) {
-                    throw new RuntimeException(e);
                 }
-            }
 
-            try {
-                Thread.sleep(0, SLEEP_NANOS);
-            } catch (InterruptedException e) {
+            } catch (SQLException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
 
@@ -128,7 +105,7 @@ public class ChargingDemoTransactionWorker extends BaseChargingDemo implements R
         while (!requestQueue.isEmpty()) {
 
             try {
-                Thread.sleep(0, SLEEP_NANOS);
+                Thread.sleep(1);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
