@@ -11,6 +11,7 @@ Far more documentation about the benchmark itself is available at the link above
 * [mongodb-charglt](https://github.com/srmadscience/mongodb-charglt)
 * [redis-charglt](https://github.com/srmadscience/redis-charglt)
 * [voltdb-charglt](https://github.com/srmadscience/voltdb-charglt)
+* [oracle-charglt](https://github.com/srmadscience/oracle-charglt)
 
 ## Prerequisites
 
