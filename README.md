@@ -74,6 +74,30 @@ Re-source the script before each run: new logins need an unexpired token.
 Every call is a network round trip, so when running far from the endpoint use plenty of loader threads and
 benchmark workers.
 
+### Example results
+
+These runs used a Free Edition workspace (Postgres 17, 1 CU, AWS us-east-2), with the client on a Mac about
+130 ms away (round-trip time). They show the benchmark working, not what Lakebase can do: throughput is limited by
+round trips, and grows almost in step with the number of workers.
+
+Loading 10,000 users (`CreateChargingDemoData`):
+
+| Threads | Users per second |
+|---|---|
+| 1 | ~4 |
+| 16 | 58 |
+
+`ChargingDemoTransactions` with 10,000 users, 60 seconds, and 2 tpms requested (so it reports
+`UNABLE_TO_MEET_REQUESTED_TPS`):
+
+| Workers | Transactions | TPS | ReportQuotaUsage median / p99 (ms) | AddCredit median / p99 (ms) |
+|---|---|---|---|---|
+| 16 | 6,018 | 99 | 588 / 1,703 | 571 / 1,691 |
+| 100 | 34,698 | 569 | 428 / 1,683 | 417 / 1,658 |
+
+Latencies are measured at the client and include time waiting in the client's queue (a median of 443 ms with
+16 workers and 279 ms with 100).
+
 ## Running the benchmark
 
 ### Load data — CreateChargingDemoData
