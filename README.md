@@ -50,21 +50,44 @@ Connection details are set via environment variables:
 | `PG_HOST` | first CLI argument | PostgreSQL host (single host or comma-separated list for failover) |
 | `PG_USER` | CLI argument | Database user |
 | `PG_PASSWORD` | CLI argument | Database password |
+| `PG_PORT` | `5432` | Port |
+| `PG_DATABASE` | `charglt` | Database name |
+| `PG_SSLMODE` | driver default | JDBC `sslmode`, e.g. `require` |
 
-Port defaults to **5432**. The database name is always `charglt`.
+## Databricks Lakebase
+
+The benchmark runs unchanged on a Databricks Lakebase Autoscaling project. `lakebase-env.sh` looks up the endpoint's
+host, generates a one-hour OAuth token to use as the password, and exports the `PG_*` variables (and `PGHOST` etc.
+for `psql`):
+
+```
+. ./lakebase-env.sh path/to/databricks.properties   # needs databricks.host and databricks.token
+psql -d databricks_postgres -c 'CREATE DATABASE charglt'
+psql -d charglt -f ddl/create_db.sql
+psql -d charglt -f ddl/create_procs.sql
+```
+
+`LAKEBASE_PROJECT` (default `charglt`), `LAKEBASE_BRANCH` (default `production`) and `LAKEBASE_ENDPOINT`
+(default `primary`) select the endpoint. The hostname, username and password CLI arguments are then ignored.
+Re-source the script before each run: new logins need an unexpired token.
+
+Every call is a network round trip, so when running far from the endpoint use plenty of loader threads and
+benchmark workers.
 
 ## Running the benchmark
 
 ### Load data — CreateChargingDemoData
 
 ```
-hostname usercount tpms maxinitialcredit username password
+hostname usercount tpms maxinitialcredit username password [threadcount]
 ```
 
 Example — load 100,000 users at up to 10 transactions per millisecond, each starting with up to 1,000 units of credit:
 ```
 10.13.1.101 100000 10 1000 postgres mypassword
 ```
+
+`threadcount` (default 1) splits the load across that many threads, each with its own connection.
 
 ### Transaction benchmark — ChargingDemoTransactions
 

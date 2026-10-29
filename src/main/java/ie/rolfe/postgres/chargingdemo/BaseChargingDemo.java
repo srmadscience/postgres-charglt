@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Properties;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.fail;
@@ -108,12 +109,29 @@ public abstract class BaseChargingDemo {
             port = "5432";
         }
 
-        final String connectString = "jdbc:postgresql://" + host + ":" + port + "/charglt?user=" + user + "&password=" + password;
+        String database = System.getenv("PG_DATABASE");
+        if (database == null) {
+            database = "charglt";
+        }
+
+        final String connectString = "jdbc:postgresql://" + host + ":" + port + "/" + database;
+
+        // Passed as properties rather than in the URL, so that passwords such as
+        // Databricks Lakebase OAuth tokens don't need URL-encoding.
+        Properties props = new Properties();
+        props.setProperty("user", user);
+        props.setProperty("password", password);
+
+        // Managed services such as Databricks Lakebase require "require".
+        String sslMode = System.getenv("PG_SSLMODE");
+        if (sslMode != null) {
+            props.setProperty("sslmode", sslMode);
+        }
 
         try {
             msg("Logging into PostgreSQL");
 
-            Connection connection = DriverManager.getConnection(connectString);
+            Connection connection = DriverManager.getConnection(connectString, props);
             connection.setAutoCommit(autoCommit);
             return connection;
 
@@ -219,16 +237,34 @@ public abstract class BaseChargingDemo {
      */
     protected static void upsertAllUsers(int userCount, int tpMs, int loblength, Gson gson, int initialCredit,
                                          Connection mainConnection) throws InterruptedException {
+        upsertUsers(0, 1, userCount, tpMs, loblength, gson, initialCredit, mainConnection);
+    }
+
+    /**
+     * Create users firstUser, firstUser + step, firstUser + 2 * step ... up to userCount,
+     * so that several threads, each with its own connection, can load disjoint users.
+     *
+     * @param firstUser
+     * @param step
+     * @param userCount
+     * @param tpMs
+     * @param gson
+     * @param initialCredit
+     * @param mainConnection
+     */
+    protected static void upsertUsers(int firstUser, int step, int userCount, int tpMs, int loblength, Gson gson,
+                                      int initialCredit, Connection mainConnection) throws InterruptedException {
         try {
             final long startMsUpsert = System.currentTimeMillis();
 
             long currentMs = System.currentTimeMillis();
             int tpThisMs = 0;
+            int upserted = 0;
             Random r = new Random();
 
             PreparedStatement cs = mainConnection.prepareStatement("SELECT * FROM UpsertUser(?,?,?,?,?,?)");
 
-            for (int i = 0; i < userCount; i++) {
+            for (int i = firstUser; i < userCount; i += step) {
 
                 String ourJson = getExtraUserDataAsJsonString(loblength, gson, r, userCount);
 
@@ -250,20 +286,20 @@ public abstract class BaseChargingDemo {
                 cs.setTimestamp(5, new Timestamp(System.currentTimeMillis()));
                 cs.setString(6, startMsUpsert + "_" + i);
                 cs.execute();
+                upserted++;
 
-
-                if (i % 100 == 1) {
-                    msg("Upserted " + i + " users...");
+                if (upserted % 100 == 1) {
+                    msg("Upserted " + upserted + " users...");
                     commitIfNeeded(mainConnection);
                 }
 
             }
 
-            msg("All " + userCount + " entries in queue, waiting for it to drain...");
+            msg("All " + upserted + " entries in queue, waiting for it to drain...");
             commitIfNeeded(mainConnection);
 
-            long entriesPerMS = userCount / (System.currentTimeMillis() - startMsUpsert);
-            msg("Upserted " + entriesPerMS + " users per ms...");
+            long elapsedMs = Math.max(1, System.currentTimeMillis() - startMsUpsert);
+            msg("Upserted " + (upserted * 1000L / elapsedMs) + " users per second...");
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

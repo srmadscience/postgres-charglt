@@ -19,6 +19,7 @@ import java.sql.Connection;
 
 import java.util.Arrays;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CreateChargingDemoData extends BaseChargingDemo {
 
@@ -32,8 +33,8 @@ public class CreateChargingDemoData extends BaseChargingDemo {
 
         msg("Parameters:" + Arrays.toString(args));
 
-        if (args.length != 6) {
-            msg("Usage: hostnames recordcount tpms  maxinitialcredit username password");
+        if (args.length != 6 && args.length != 7) {
+            msg("Usage: hostnames recordcount tpms  maxinitialcredit username password [threadcount]");
             System.exit(1);
         }
 
@@ -55,17 +56,53 @@ public class CreateChargingDemoData extends BaseChargingDemo {
 
         String username = args[4];
         String password = args[5];
-        try {
-            // Batch many upserts per transaction, so this loader manages its own commits.
-            Connection mainClient = connectPG(hostlist, username, password, false);
 
-            upsertAllUsers(userCount, tpMs, loblength, gson, initialCredit, mainClient);
+        // Each thread has its own connection and loads every threadCount'th user, which
+        // matters when every round trip is slow, e.g. to a remote managed database.
+        int threadCount = args.length == 7 ? Integer.parseInt(args[6]) : 1;
+        int tpMsPerThread = threadCount == 1 ? tpMs : Math.max(1, tpMs / threadCount);
 
-            msg("Closing connection...");
-            mainClient.close();
+        Thread[] threads = new Thread[threadCount];
+        AtomicBoolean failed = new AtomicBoolean(false);
+        final long startMs = System.currentTimeMillis();
 
-        } catch (Exception e) {
-            msg(e.getMessage());
+        for (int t = 0; t < threadCount; t++) {
+            final int firstUser = t;
+            threads[t] = new Thread(() -> {
+                try {
+                    // Batch many upserts per transaction, so this loader manages its own commits.
+                    Connection mainClient = connectPG(hostlist, username, password, false);
+
+                    upsertUsers(firstUser, threadCount, userCount, tpMsPerThread, loblength, new Gson(),
+                            initialCredit, mainClient);
+
+                    msg("Closing connection...");
+                    mainClient.close();
+
+                } catch (Exception e) {
+                    msg(e.getMessage());
+                    failed.set(true);
+                }
+            }, "loader-" + t);
+            threads[t].start();
+        }
+
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                failed.set(true);
+            }
+        }
+
+        long elapsedMs = Math.max(1, System.currentTimeMillis() - startMs);
+        msg("Loaded " + userCount + " users with " + threadCount + " threads in " + elapsedMs + "ms ("
+                + (userCount * 1000L / elapsedMs) + " users per second)");
+
+        if (failed.get()) {
+            msg("At least one loader thread failed");
+            System.exit(1);
         }
 
     }
