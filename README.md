@@ -76,6 +76,9 @@ benchmark workers.
 
 ### Example results
 
+> **Disclaimer:** these numbers come from a smoke test, run only to show that the benchmark works on Lakebase.
+> They are not a performance benchmark, and should not be quoted or used to compare Lakebase with other databases.
+
 These runs used a Free Edition workspace (Postgres 17, 1 CU, AWS us-east-2), with the client on a Mac about
 130 ms away (round-trip time). They show the benchmark working, not what Lakebase can do: throughput is limited by
 round trips, and grows almost in step with the number of workers.
