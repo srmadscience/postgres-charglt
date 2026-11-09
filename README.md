@@ -97,9 +97,45 @@ Loading 10,000 users (`CreateChargingDemoData`):
 |---|---|---|---|---|
 | 16 | 6,018 | 99 | 588 / 1,703 | 571 / 1,691 |
 | 100 | 34,698 | 569 | 428 / 1,683 | 417 / 1,658 |
+| 150 | 50,998 | 836 | 421 / 1,634 | 404 / 1,614 |
+| 200 | 71,544 | 1,173 | 445 / 1,616 | 443 / 1,674 |
 
 Latencies are measured at the client and include time waiting in the client's queue (a median of 443 ms with
 16 workers and 279 ms with 100).
+
+Throughput stays at about 5.7 TPS per worker from 100 to 200 workers, and median latency does not rise, so the
+1 CU endpoint is not saturated: the round trip is the limit. The endpoint allows 225 connections (7 reserved for
+superusers), so about 200 workers is as far as this client can go. Finding the endpoint's real limit would need a
+client in the same region.
+
+`ChargingDemoTransactions` with 200 workers for 30 minutes:
+
+| Workers | Duration | Transactions | TPS | ReportQuotaUsage median / p99 (ms) | AddCredit median / p99 (ms) |
+|---|---|---|---|---|---|
+| 200 | 30 min | 2,063,974 | 1,146 | 422 / 1,574 | 420 / 1,574 |
+
+Averaged over 30 minutes, throughput and latency are close to the 60-second run with 200 workers.
+
+### For comparison: a local PostgreSQL server
+
+> **Disclaimer:** also a smoke test, not a benchmark. The gap below is almost all network distance (1.6 ms
+> versus 130 ms round trip), not a measure of Lakebase against PostgreSQL.
+
+The same runs against PostgreSQL 18.6 on an untuned Ubuntu server on the client's LAN (about 1.6 ms round
+trip, default `shared_buffers` of 128 MB, `max_connections` of 100):
+
+| Threads | Users per second (10,000 users) |
+|---|---|
+| 1 | 1,604 |
+| 16 | 11,210 |
+
+| Workers | Transactions | TPS | ReportQuotaUsage median / p99 (ms) | AddCredit median / p99 (ms) |
+|---|---|---|---|---|
+| 16 | 106,095 | 1,768 | 29 / 94 | 30 / 94 |
+| 64 | 238,744 | 3,979 | 8 / 56 | 8 / 60 |
+
+100 workers is not possible there: with 3 of the 100 connections reserved for superusers, the run cannot open
+enough connections.
 
 ## Running the benchmark
 
